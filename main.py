@@ -112,39 +112,45 @@ def main():
                         continue
                     
                     try:
+                        # Fetch market price
                         ticker = exchange.fetch_ticker(symbol)
                         market_price = ticker['last']
                         base_amount = usdt_value / market_price
-                        exchange.set_leverage(leverage, symbol)
+
+                        # Always set isolated margin mode
+                        try:
+                            exchange.set_margin_mode('isolated', symbol)
+                        except ccxt.BaseError as e:
+                            print(f"⚠️ Failed to set margin mode for {symbol}: {e}")
+
+                        # Always set leverage after margin mode
+                        try:
+                            exchange.set_leverage(leverage, symbol)
+                        except ccxt.BaseError as e:
+                            print(f"⚠️ Failed to set leverage for {symbol}: {e}")
+
                         print(f"🔔 ORDER → {symbol} | {side.upper()} | Price: {market_price:.4f} | Qty: {base_amount:.5f}")
 
-                        try:
-                            order = exchange.create_order(
-                                symbol=symbol,
-                                type='market',
-                                side=side,
-                                amount=base_amount,
-                                params={'reduceOnly': False}
-                            )
-                            print(f"Order Result: {order}")
-                        except ccxt.BaseError as e:
-                            if 'TE_ERR_INCONSISTENT_POS_MODE' in str(e):
-                                # Set hedge mode and retry with posSide
-                                exchange.set_position_mode(True, symbol)
-                                order = exchange.create_order(
-                                    symbol=symbol,
-                                    type='market',
-                                    side=side,
-                                    amount=base_amount,
-                                    params={
-                                        'reduceOnly': False,
-                                        'posSide': 'Short' if side == 'sell' else 'Long'
-                                    }
-                                )
-                                print(f"Order Result: {order}")
+                        # Determine position side
+                        pos_side = 'Long' if side == 'buy' else 'Short'
+
+                        # Always use posSide and isolated mode in order
+                        order = exchange.create_order(
+                            symbol=symbol,
+                            type='market',
+                            side=side,
+                            amount=base_amount,
+                            params={
+                                'reduceOnly': False,
+                                'posSide': pos_side,
+                                'marginMode': 'isolated'  # redundant but enforced for clarity
+                            }
+                        )
+                        print(f"✅ Order Result: {order}")
 
                     except Exception as e:
-                        print(f"⚠️ {symbol} → Error: {e}")
+                        print(f"❌ {symbol} → Error: {e}")
+
                 
             except Exception as e:
                 print("Error inside job:")
