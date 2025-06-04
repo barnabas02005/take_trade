@@ -104,10 +104,10 @@ def main():
                 if signal:
                     # Respect max trades
                     if short_count >= MAX_NO_SELL_TRADE and side == 'sell':
-                        print(f"❌ Skip {symbol}: sell limit reached")
+                        print(f"❌ Skip {symbol}: sell limit reached ({short_count})")
                         continue
                     if long_count >= MAX_NO_BUY_TRADE and side == 'buy':
-                        print(f"❌ Skip {symbol}: buy limit reached")
+                        print(f"❌ Skip {symbol}: buy limit reached ({long_count})")
                         continue
 
                     ticker = exchange.fetch_ticker(symbol)
