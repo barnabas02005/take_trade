@@ -1,4 +1,5 @@
 import ccxt
+import os
 import pandas as pd
 import ta
 import time
