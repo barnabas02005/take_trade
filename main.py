@@ -92,7 +92,7 @@ def main():
         all_symbols = [s for s in markets if s.endswith(':USDT') and markets[s]['type'] == 'swap']
 
         # Initial fetch of positions
-        open_positions, short_count, long_count = get_open_position_counts(exchange, all_symbols)
+        open_positions = get_open_position_counts(exchange, all_symbols)
         opened_symbols = {pos['symbol'] for pos in open_positions}
         symbols_not_opened = [s for s in all_symbols if s not in opened_symbols]
 
@@ -100,6 +100,8 @@ def main():
             try:
                 signal, side, details = check_trade_signal(exchange, symbol)
                 print(f"{symbol} → Signal: {signal}, Side: {side}, Trend: {details['trend']}")
+                
+                short_count, long_count = get_open_position_counts(exchange, all_symbols)
 
                 if signal:
                     # Respect max trades
