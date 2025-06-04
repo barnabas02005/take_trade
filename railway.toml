@@ -1,2 +1,2 @@
 [deploy]
-start = "python take_trade.py"
+start = "python main.py"
