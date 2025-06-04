@@ -54,6 +54,24 @@ def check_trade_signal(exchange, symbol):
         'trend': trend
     }
 
+# Helper function to get open long/short counts
+def get_open_position_counts(exchange, all_symbols):
+    positions = exchange.fetch_positions(symbols=all_symbols)
+    open_positions = [pos for pos in positions if pos.get('contracts') and abs(float(pos['contracts'])) > 0]
+    short_positions = [
+        pos for pos in open_positions
+        if (pos.get('side') == 'short') or
+        ('size' in pos and float(pos['size']) < 0) or
+        ('info' in pos and pos['info'].get('side', '').lower() == 'sell')
+    ]
+    long_positions = [
+        pos for pos in open_positions
+        if (pos.get('side') == 'long') or
+        ('size' in pos and float(pos['size']) > 0) or
+        ('info' in pos and pos['info'].get('side', '').lower() == 'buy')
+    ]
+    return open_positions, len(short_positions), len(long_positions)
+
 # Trading parameters
 usdt_value = 1.5
 leverage = 10
@@ -62,26 +80,19 @@ leverage = 10
 def main():
     try:
         exchange = ccxt.phemex({
-        'apiKey': api_key,
-        'secret': secret,
-        'options': {'defaultType': 'swap'},
+            'apiKey': api_key,
+            'secret': secret,
+            'options': {'defaultType': 'swap'},
         })
 
         MAX_NO_SELL_TRADE = 15
         MAX_NO_BUY_TRADE = 2
 
-        # Preload once
-        # Step 1: Fetch all markets and filter for swap symbols
         markets = exchange.load_markets()
         all_symbols = [s for s in markets if s.endswith(':USDT') and markets[s]['type'] == 'swap']
 
-        # Step 2: Fetch all positions (returns full position objects)
-        positions = exchange.fetch_positions(symbols=all_symbols)
-
-        # Step 3: Filter positions that are open (contracts > 0)
-        open_positions = [pos for pos in positions if pos.get('contracts') and abs(float(pos['contracts'])) > 0]
-
-        # Step 4: Get symbols that are NOT opened
+        # Initial fetch of positions
+        open_positions, short_count, long_count = get_open_position_counts(exchange, all_symbols)
         opened_symbols = {pos['symbol'] for pos in open_positions}
         symbols_not_opened = [s for s in all_symbols if s not in opened_symbols]
 
@@ -91,26 +102,7 @@ def main():
                 print(f"{symbol} → Signal: {signal}, Side: {side}, Trend: {details['trend']}")
 
                 if signal:
-                    # Step 5: Count short positions from full position objects
-                    short_positions = [
-                        pos for pos in open_positions
-                        if (pos.get('side') == 'short') or
-                        ('size' in pos and float(pos['size']) < 0) or
-                        ('info' in pos and pos['info'].get('side', '').lower() == 'sell')
-                    ]
-
-                    # Step 5b: Count long positions from full position objects
-                    long_positions = [
-                        pos for pos in open_positions
-                        if (pos.get('side') == 'long') or
-                        ('size' in pos and float(pos['size']) > 0) or
-                        ('info' in pos and pos['info'].get('side', '').lower() == 'buy')
-                    ]
-                    # Final: Count shorts
-                    short_count = len(short_positions)
-                    long_count = len(long_positions)
-                    print(f"Short positions open: {short_count}")
-                    print(f"Long positions open: {long_count}")
+                    # Respect max trades
                     if short_count >= MAX_NO_SELL_TRADE and side == 'sell':
                         print(f"❌ Skip {symbol}: sell limit reached")
                         continue
@@ -146,6 +138,10 @@ def main():
                                 }
                             )
                             print(f"Order Result: {order}")
+
+                    # ✅ Refresh counts after placing order
+                    open_positions, short_count, long_count = get_open_position_counts(exchange, all_symbols)
+
             except Exception as e:
                 print(f"⚠️ {symbol} → Error: {e}")
     except Exception as e:
@@ -154,7 +150,6 @@ def main():
 
 schedule.every(6).seconds.do(main)
 
-# ✅ Outer loop handles everything
 while True:
     try:
         schedule.run_pending()
