@@ -110,40 +110,48 @@ def main():
                     if long_count >= MAX_NO_BUY_TRADE and side == 'buy':
                         print(f"❌ Skip {symbol}: buy limit reached ({long_count})")
                         continue
-
-                    ticker = exchange.fetch_ticker(symbol)
-                    market_price = ticker['last']
-                    base_amount = usdt_value / market_price
-                    exchange.set_leverage(leverage, symbol)
-                    print(f"🔔 ORDER → {symbol} | {side.upper()} | Price: {market_price:.4f} | Qty: {base_amount:.5f}")
-
+                    
                     try:
-                        order = exchange.create_order(
-                            symbol=symbol,
-                            type='market',
-                            side=side,
-                            amount=base_amount,
-                            params={'reduceOnly': False}
-                        )
-                        print(f"Order Result: {order}")
-                    except ccxt.BaseError as e:
-                        if 'TE_ERR_INCONSISTENT_POS_MODE' in str(e):
+                        ticker = exchange.fetch_ticker(symbol)
+                        market_price = ticker['last']
+                        base_amount = usdt_value / market_price
+                        exchange.set_leverage(leverage, symbol)
+                        print(f"🔔 ORDER → {symbol} | {side.upper()} | Price: {market_price:.4f} | Qty: {base_amount:.5f}")
+
+                        try:
                             order = exchange.create_order(
                                 symbol=symbol,
                                 type='market',
                                 side=side,
                                 amount=base_amount,
-                                params={
-                                    'reduceOnly': False,
-                                    'posSide': 'Short' if side == "sell" else 'Long'
-                                }
+                                params={'reduceOnly': False}
                             )
                             print(f"Order Result: {order}")
+                        except ccxt.BaseError as e:
+                            if 'TE_ERR_INCONSISTENT_POS_MODE' in str(e):
+                                # Set hedge mode and retry with posSide
+                                exchange.set_position_mode(True, symbol)
+                                order = exchange.create_order(
+                                    symbol=symbol,
+                                    type='market',
+                                    side=side,
+                                    amount=base_amount,
+                                    params={
+                                        'reduceOnly': False,
+                                        'posSide': 'Short' if side == 'sell' else 'Long'
+                                    }
+                                )
+                                print(f"Order Result: {order}")
 
+                    except Exception as e:
+                        print(f"⚠️ {symbol} → Error: {e}")
+                
             except Exception as e:
-                print(f"⚠️ {symbol} → Error: {e}")
+                print("Error inside job:")
+                traceback.print_exc()
+                
     except Exception as e:
-        print("Error inside job:")
+        print(f"Main function error: {e}")
         traceback.print_exc()
 
 schedule.every(6).seconds.do(main)
@@ -157,3 +165,4 @@ while True:
         traceback.print_exc()
         print("Retrying in 10 seconds...")
         time.sleep(8)
+
