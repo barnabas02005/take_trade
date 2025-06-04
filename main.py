@@ -92,7 +92,7 @@ def main():
         all_symbols = [s for s in markets if s.endswith(':USDT') and markets[s]['type'] == 'swap']
 
         # Initial fetch of positions
-        open_positions = get_open_position_counts(exchange, all_symbols)
+        open_positions, _, _ = get_open_position_counts(exchange, all_symbols)
         opened_symbols = {pos['symbol'] for pos in open_positions}
         symbols_not_opened = [s for s in all_symbols if s not in opened_symbols]
 
@@ -100,10 +100,9 @@ def main():
             try:
                 signal, side, details = check_trade_signal(exchange, symbol)
                 print(f"{symbol} → Signal: {signal}, Side: {side}, Trend: {details['trend']}")
-                
-                short_count, long_count = get_open_position_counts(exchange, all_symbols)
 
                 if signal:
+                    _, short_count, long_count = get_open_position_counts(exchange, all_symbols)
                     # Respect max trades
                     if short_count >= MAX_NO_SELL_TRADE and side == 'sell':
                         print(f"❌ Skip {symbol}: sell limit reached ({short_count})")
@@ -140,9 +139,6 @@ def main():
                                 }
                             )
                             print(f"Order Result: {order}")
-
-                    # ✅ Refresh counts after placing order
-                    open_positions, short_count, long_count = get_open_position_counts(exchange, all_symbols)
 
             except Exception as e:
                 print(f"⚠️ {symbol} → Error: {e}")
