@@ -110,6 +110,10 @@ def main():
                     if long_count >= MAX_NO_BUY_TRADE and side == 'buy':
                         print(f"❌ Skip {symbol}: buy limit reached ({long_count})")
                         continue
+
+                    if side == 'buy':
+                        print("No buying for now')
+                        continue
                     
                     try:
                         # Fetch market price
