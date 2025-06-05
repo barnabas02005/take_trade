@@ -111,7 +111,7 @@ def main():
                         print(f"❌ Skip {symbol}: buy limit reached ({long_count})")
                         continue
 
-                    if side == 'buy':
+                    if side == 'bcuy':
                         print("No buying for now")
                         continue
                     
