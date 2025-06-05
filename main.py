@@ -1,15 +1,18 @@
 import ccxt
+import os
 import pandas as pd
 import ta
 import time
-import math
-import json
 import schedule
 import traceback
 
-# Replace with your actual API credentials
-api_key = 'c895dd8c-1cc1-4e88-86a2-b6e856c274ba'
-secret = 'qO73E8E6SsLlQ4TDgjhGpe-h7KWZYYhdNHl-bYLW0woyOTNiNWFlYi1lYmJmLTRmOWEtYTIxOS1hY2RkMjk3YzM5MjI'
+from dotenv import load_dotenv
+
+load_dotenv()
+
+api_key = os.getenv('API_KEY')
+secret = os.getenv('SECRET')
+
 
 def count_sig_digits(precision):
     # Count digits after decimal point if it's a fraction
