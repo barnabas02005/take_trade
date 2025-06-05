@@ -1,8 +1,9 @@
 import ccxt
-import os
 import pandas as pd
 import ta
 import time
+import math
+import json
 import schedule
 import traceback
 
