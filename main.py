@@ -112,7 +112,7 @@ def main():
                         continue
 
                     if side == 'buy':
-                        print("No buying for now')
+                        print("No buying for now")
                         continue
                     
                     try:
