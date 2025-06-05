@@ -1,18 +1,27 @@
 import ccxt
-import os
 import pandas as pd
 import ta
 import time
+import math
+import json
 import schedule
 import traceback
 
-from dotenv import load_dotenv
+# Replace with your actual API credentials
+api_key = 'c895dd8c-1cc1-4e88-86a2-b6e856c274ba'
+secret = 'qO73E8E6SsLlQ4TDgjhGpe-h7KWZYYhdNHl-bYLW0woyOTNiNWFlYi1lYmJmLTRmOWEtYTIxOS1hY2RkMjk3YzM5MjI'
 
-load_dotenv()
+def count_sig_digits(precision):
+    # Count digits after decimal point if it's a fraction
+    if precision < 1:
+        return abs(int(round(math.log10(precision))))
+    else:
+        return 1  # Treat whole numbers like 1, 10, 100 as 1 sig digit
 
-api_key = os.getenv('API_KEY')
-secret = os.getenv('SECRET')
-
+def round_to_sig_figs(num, sig_figs):
+    if num == 0:
+        return 0
+    return round(num, sig_figs - int(math.floor(math.log10(abs(num)))) - 1)
 
 def check_trade_signal(exchange, symbol):
     ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=10)
@@ -75,6 +84,124 @@ def get_open_position_counts(exchange, all_symbols):
 # Trading parameters
 usdt_value = 1.5
 leverage = 10
+fromPercnt = 0.2  #20%
+
+def calculateLiquidationTargPrice(_liqprice, _entryprice, _percnt, _round):
+    return round_to_sig_figs(_entryprice + (_liqprice - _entryprice) * _percnt, _round)
+
+def place_market_then_liquidation_limit_order(exchange, symbol, side, usdt_value, leverage):
+    try:
+        # Fetch market price
+        ticker = exchange.fetch_ticker(symbol)
+        market_price = ticker['last']
+        base_amount = usdt_value / market_price
+
+        # Try setting isolated margin mode
+        try:
+            exchange.set_margin_mode('isolated', symbol)
+        except Exception as e:
+            print(f"⚠️ Failed to set margin mode for {symbol}: {e}")
+
+        # Try setting leverage
+        try:
+            exchange.set_leverage(leverage, symbol)
+        except Exception as e:
+            print(f"⚠️ Failed to set leverage for {symbol}: {e}")
+
+        print(f"🔔 ORDER → {symbol} | {side.upper()} | Price: {market_price:.4f} | Qty: {base_amount:.5f}")
+
+        # Attempt market order without posSide
+        try:
+            order = exchange.create_order(
+                symbol=symbol,
+                type='market',
+                side=side,
+                amount=base_amount,
+                params={'reduceOnly': False}
+            )
+            print(f"✅ Market Order Placed: {order}")
+        except ccxt.BaseError as e:
+            if 'TE_ERR_INCONSISTENT_POS_MODE' in str(e):
+                print("🔁 Retrying market order with posSide...")
+                pos_side = 'Long' if side == 'buy' else 'Short'
+                order = exchange.create_order(
+                    symbol=symbol,
+                    type='market',
+                    side=side,
+                    amount=base_amount,
+                    params={
+                        'reduceOnly': False,
+                        'posSide': pos_side
+                    }
+                )
+                print(f"✅ Market Order (with posSide) Placed: {order}")
+            else:
+                raise
+
+        # 🔍 Fetch liquidation price
+        positions = exchange.fetch_positions([symbol])
+        pos_side_str = 'Long' if side == 'buy' else 'Short'
+        position = next((p for p in positions if p['side'] == pos_side_str.lower()), None)
+
+        if position and float(position.get('liquidationPrice') or 0):
+            liquidation_price = float(position.get('liquidationPrice') or 0)
+            entry_price = float(position.get('entryPrice') or 0)
+            mark_price = float(position.get('markPrice') or 0)
+            contracts = float(position.get('contracts') or 0)
+            reEntryLeverage = float(position.get("leverage") or 1)
+            notional = float(position.get('notional') or 0)
+            # Price
+            price_precision_val = exchange.markets[symbol]['precision']['price']
+            price_sig_digits = count_sig_digits(price_precision_val)
+            # amount
+            amount_precision_val = exchange.markets[symbol]['precision']['amount']
+            print("Price Precision: ", price_precision_val, " sig value: ", price_sig_digits)
+            amount_sig_digits = count_sig_digits(amount_precision_val)
+            
+            double_notional = notional * 2
+            order_amount = double_notional / mark_price
+            order_amount = round_to_sig_figs(order_amount, amount_sig_digits)
+            print(f"💡 Liquidation Price: {liquidation_price}")
+            try:
+                print("Calculation Re-entry Target Price")
+                targetPrice = calculateLiquidationTargPrice(entry_price, liquidation_price, fromPercnt, price_sig_digits)
+                print("Target Price: ", targetPrice)
+            
+
+                # Try placing limit order without posSide first
+                try:
+                    limit_order = exchange.create_order(
+                        symbol=symbol,
+                        type='limit',
+                        side=side,
+                        amount=order_amount,
+                        price=targetPrice
+                    )
+                    print(f"📌 Limit Order Placed at Liquidation Price: {limit_order}")
+                except ccxt.BaseError as e:
+                    if 'TE_ERR_INCONSISTENT_POS_MODE' in str(e):
+                        print("🔁 Retrying limit order with posSide...")
+                        limit_order = exchange.create_order(
+                            symbol=symbol,
+                            type='limit',
+                            side=side,
+                            amount=order_amount,
+                            price=targetPrice,
+                            params={
+                                'posSide': pos_side_str
+                            }
+                        )
+                        print(f"📌 Limit Order (with posSide) Placed at Liquidation Price: {limit_order}")
+                    else:
+                        raise
+            except Exception as e:
+                print(f"❌ Error in getting liquidation target price for {symbol}: {e}")
+        else:
+            print("⚠️ Could not retrieve liquidation price. Skipping limit order.")
+
+    except Exception as e:
+        print(f"❌ Error in order flow for {symbol}: {e}")
+
 
 # MAIN LOOP
 def main():
@@ -82,6 +209,7 @@ def main():
         exchange = ccxt.phemex({
             'apiKey': api_key,
             'secret': secret,
+            'enableRateLimit': True,
             'options': {'defaultType': 'swap'},
         })
 
@@ -110,48 +238,15 @@ def main():
                     if long_count >= MAX_NO_BUY_TRADE and side == 'buy':
                         print(f"❌ Skip {symbol}: buy limit reached ({long_count})")
                         continue
-
-
+                    if side == 'buy':
+                        print("No buy for now!!")
+                        continue
                     
                     try:
-                        # Fetch market price
-                        ticker = exchange.fetch_ticker(symbol)
-                        market_price = ticker['last']
-                        base_amount = usdt_value / market_price
-
-                        # Always set isolated margin mode
-                        try:
-                            exchange.set_margin_mode('isolated', symbol)
-                        except ccxt.BaseError as e:
-                            print(f"⚠️ Failed to set margin mode for {symbol}: {e}")
-
-                        # Always set leverage after margin mode
-                        try:
-                            exchange.set_leverage(leverage, symbol)
-                        except ccxt.BaseError as e:
-                            print(f"⚠️ Failed to set leverage for {symbol}: {e}")
-
-                        print(f"🔔 ORDER → {symbol} | {side.upper()} | Price: {market_price:.4f} | Qty: {base_amount:.5f}")
-
-                        # Determine position side
-                        pos_side = 'Long' if side == 'buy' else 'Short'
-
-                        # Always use posSide and isolated mode in order
-                        order = exchange.create_order(
-                            symbol=symbol,
-                            type='market',
-                            side=side,
-                            amount=base_amount,
-                            params={
-                                'reduceOnly': False,
-                                'posSide': pos_side,
-                                'marginMode': 'isolated'  # redundant but enforced for clarity
-                            }
-                        )
-                        print(f"✅ Order Result: {order}")
-
+                        place_market_then_liquidation_limit_order(exchange, symbol, side, usdt_value, leverage)
                     except Exception as e:
-                        print(f"❌ {symbol} → Error: {e}")
+                        print(f"❌ {symbol} → General Error: {e}")
+
 
                 
             except Exception as e:
@@ -173,4 +268,3 @@ while True:
         traceback.print_exc()
         print("Retrying in 10 seconds...")
         time.sleep(8)
-
