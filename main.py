@@ -87,7 +87,7 @@ def get_open_position_counts(exchange, all_symbols):
     return open_positions, len(short_positions), len(long_positions)
 
 # Trading parameters
-usdt_value = 1.5
+usdt_value = 2.5
 leverage = 5
 fromPercnt = 0.2  #20%
 
@@ -163,7 +163,7 @@ def place_market_then_liquidation_limit_order(exchange, symbol, side, usdt_value
             print("Price Precision: ", price_precision_val, " sig value: ", price_sig_digits)
             amount_sig_digits = count_sig_digits(amount_precision_val)
             
-            double_notional = notional * 2
+            double_notional = notional * 1.5
             order_amount = double_notional / mark_price
             order_amount = round_to_sig_figs(order_amount, amount_sig_digits)
             print(f"💡 Liquidation Price: {liquidation_price}")
@@ -218,7 +218,7 @@ def main():
             'options': {'defaultType': 'swap'},
         })
 
-        MAX_NO_SELL_TRADE = 15
+        MAX_NO_SELL_TRADE = 10
         MAX_NO_BUY_TRADE = 2
 
         markets = exchange.load_markets()
