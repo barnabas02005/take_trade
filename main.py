@@ -87,7 +87,7 @@ def get_open_position_counts(exchange, all_symbols):
     return open_positions, len(short_positions), len(long_positions)
 
 # Trading parameters
-usdt_value = 2.5
+usdt_value = 0.5
 leverage = 5
 fromPercnt = 0.2  #20%
 
